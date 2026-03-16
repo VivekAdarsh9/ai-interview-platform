@@ -1,4 +1,4 @@
-name: Import Issues from CSV
+name: Import or Update Issues from CSV
 
 on:
   workflow_dispatch:
@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
       - name: Install GitHub CLI
@@ -26,37 +26,68 @@ jobs:
       - name: Authenticate GitHub CLI
         run: echo "${{ secrets.GITHUB_TOKEN }}" | gh auth login --with-token
 
-      - name: Create Labels
+      - name: Ensure Labels Exist
         run: |
           gh label create Backend --color FF5733 --force || true
           gh label create Frontend --color 33C3FF --force || true
           gh label create DevOps --color 8E44AD --force || true
           gh label create Database --color 2ECC71 --force || true
+
           gh label create High --color FF0000 --force || true
           gh label create Medium --color F1C40F --force || true
           gh label create Low --color 2ECC71 --force || true
 
-      - name: Create Milestones
+      - name: Ensure Milestones Exist
         run: |
-          gh api repos/${{ github.repository }}/milestones -f title="Phase 1" || true
-          gh api repos/${{ github.repository }}/milestones -f title="Phase 2" || true
-          gh api repos/${{ github.repository }}/milestones -f title="Phase 3" || true
+          create_milestone () {
+            TITLE=$1
+            EXISTS=$(gh api repos/${{ github.repository }}/milestones --jq ".[] | select(.title==\"$TITLE\") | .title")
 
-      - name: Import Issues
+            if [ -z "$EXISTS" ]; then
+              echo "Creating milestone: $TITLE"
+              gh api repos/${{ github.repository }}/milestones -f title="$TITLE"
+            else
+              echo "Milestone already exists: $TITLE"
+            fi
+          }
+
+          create_milestone "Phase 1"
+          create_milestone "Phase 2"
+          create_milestone "Phase 3"
+
+      - name: Import or Update Issues
         run: |
           while IFS=',' read -r Title Description Phase Layer Priority
           do
             if [ "$Title" != "Title" ]; then
-              echo "Creating issue: $Title"
 
-              BODY="$Description\n\nPhase: $Phase\nLayer: $Layer\nPriority: $Priority"
+              echo "Processing: $Title"
 
-              gh issue create \
-                --title "$Title" \
-                --body "$BODY" \
-                --label "$Layer" \
-                --label "$Priority" \
-                --milestone "$Phase" \
-                || echo "Failed for $Title"
+              ISSUE_NUMBER=$(gh issue list \
+                --search "$Title in:title" \
+                --json number,title \
+                --jq ".[] | select(.title==\"$Title\") | .number")
+
+              if [ -z "$ISSUE_NUMBER" ]; then
+                echo "Creating issue: $Title"
+
+                BODY="$Description\n\nPhase: $Phase\nLayer: $Layer\nPriority: $Priority"
+
+                gh issue create \
+                  --title "$Title" \
+                  --body "$BODY" \
+                  --label "$Layer" \
+                  --label "$Priority" \
+                  --milestone "$Phase"
+
+              else
+                echo "Updating issue #$ISSUE_NUMBER"
+
+                gh issue edit "$ISSUE_NUMBER" \
+                  --add-label "$Layer" \
+                  --add-label "$Priority" \
+                  --milestone "$Phase"
+              fi
+
             fi
           done < issues.csv
