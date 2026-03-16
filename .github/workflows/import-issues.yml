@@ -15,28 +15,37 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # ----------------------------------------
+      # Step 1: Checkout repo
+      # ----------------------------------------
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # ----------------------------------------
+      # Step 2: Install GitHub CLI
+      # ----------------------------------------
       - name: Install GitHub CLI
         run: |
           sudo apt update
-          sudo apt install gh -y
+          sudo apt install gh jq -y
 
+      # ----------------------------------------
+      # Step 3: Authenticate with PAT
+      # ----------------------------------------
       - name: Authenticate GitHub CLI
         run: echo "${{ secrets.PAT_TOKEN }}" | gh auth login --with-token
 
-      # ------------------------------------------------
-      # Read CSV into Bash array
-      # ------------------------------------------------
-      - name: Read CSV
+      # ----------------------------------------
+      # Step 4: Prepare CSV lines
+      # ----------------------------------------
+      - name: Read CSV into array
         run: |
           sed -i 's/\r$//' issues.csv  # fix Windows line endings
           mapfile -t LINES < <(tail -n +2 issues.csv)
 
-      # ------------------------------------------------
-      # Create Labels and Milestones (rate-limit safe)
-      # ------------------------------------------------
+      # ----------------------------------------
+      # Step 5: Create labels and milestones
+      # ----------------------------------------
       - name: Ensure Labels and Milestones Exist
         run: |
           for LINE in "${LINES[@]}"
@@ -47,7 +56,7 @@ jobs:
             for LABEL in "$Layer" "$Priority"
             do
               if [ -n "$LABEL" ]; then
-                echo "Creating label (if not exists): $LABEL"
+                echo "Ensuring label exists: $LABEL"
                 gh label create "$LABEL" --color F29513 --force || true
                 sleep 1
               fi
@@ -55,15 +64,18 @@ jobs:
 
             # Milestones
             if [ -n "$Phase" ]; then
-              echo "Creating milestone (if not exists): $Phase"
-              gh api repos/${{ github.repository }}/milestones -f title="$Phase" || true
-              sleep 1
+              EXISTS=$(gh api repos/${{ github.repository }}/milestones --paginate --jq ".[] | select(.title==\"$Phase\") | .title")
+              if [ -z "$EXISTS" ]; then
+                echo "Creating milestone: $Phase"
+                gh api repos/${{ github.repository }}/milestones -f title="$Phase" || true
+                sleep 1
+              fi
             fi
           done
 
-      # ------------------------------------------------
-      # Remove Duplicate Issues (keep oldest)
-      # ------------------------------------------------
+      # ----------------------------------------
+      # Step 6: Remove duplicate issues (keep oldest)
+      # ----------------------------------------
       - name: Remove Duplicate Issues
         run: |
           for LINE in "${LINES[@]}"
@@ -71,13 +83,12 @@ jobs:
             IFS=',' read -r Title Description Phase Layer Priority <<< "$LINE"
             echo "Checking duplicates for: $Title"
 
-            ISSUES=$(gh issue list --search "$Title in:title" --json number,title --jq ".[] | select(.title==\"$Title\") | .number")
+            ISSUES=$(gh issue list --search "$Title in:title" --json number,title,createdAt --jq ".[] | select(.title==\"$Title\") | .number")
 
             COUNT=$(echo "$ISSUES" | wc -l)
 
             if [ "$COUNT" -gt 1 ]; then
               echo "Duplicate issues found for $Title"
-
               echo "$ISSUES" | tail -n +2 | while read DUP
               do
                 echo "Deleting duplicate issue #$DUP"
@@ -87,9 +98,9 @@ jobs:
             fi
           done
 
-      # ------------------------------------------------
-      # Create or Update Issues (rate-limit safe)
-      # ------------------------------------------------
+      # ----------------------------------------
+      # Step 7: Create or update issues
+      # ----------------------------------------
       - name: Import or Update Issues
         run: |
           for LINE in "${LINES[@]}"
@@ -97,9 +108,14 @@ jobs:
             IFS=',' read -r Title Description Phase Layer Priority <<< "$LINE"
             echo "Processing: $Title"
 
-            ISSUE_NUMBER=$(gh issue list --search "$Title in:title" --json number,title --jq ".[] | select(.title==\"$Title\") | .number")
+            # Get milestone number
+            MILESTONE_NUMBER=$(gh api repos/${{ github.repository }}/milestones --jq ".[] | select(.title==\"$Phase\") | .number")
 
+            # Build body
             BODY="$Description\n\nPhase: $Phase\nLayer: $Layer\nPriority: $Priority"
+
+            # Check if issue exists
+            ISSUE_NUMBER=$(gh issue list --search "$Title in:title" --json number,title --jq ".[] | select(.title==\"$Title\") | .number")
 
             if [ -z "$ISSUE_NUMBER" ]; then
               echo "Creating issue: $Title"
@@ -108,14 +124,14 @@ jobs:
                 --body "$BODY" \
                 --label "$Layer" \
                 --label "$Priority" \
-                --milestone "$Phase" || true
+                --milestone "$MILESTONE_NUMBER" || true
               sleep 1
             else
               echo "Updating issue #$ISSUE_NUMBER"
               gh issue edit "$ISSUE_NUMBER" \
                 --add-label "$Layer" \
                 --add-label "$Priority" \
-                --milestone "$Phase" || true
+                --milestone "$MILESTONE_NUMBER" || true
               sleep 1
             fi
           done
