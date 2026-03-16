@@ -17,80 +17,66 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install GitHub CLI
+      - name: Install GitHub CLI and csvkit
         run: |
           sudo apt update
-          sudo apt install gh jq -y
+          sudo apt install -y gh jq python3-pip
+          pip3 install csvkit
 
       - name: Authenticate GitHub CLI
         run: echo "${{ secrets.PAT_TOKEN }}" | gh auth login --with-token
 
-      - name: Parse CSV and Create Labels/Milestones
+      - name: Parse CSV and Create Labels / Milestones
         run: |
-          # fix Windows line endings
-          sed -i 's/\r$//' issues.csv
+          # Convert CSV to JSON (handles commas inside quotes)
+          csvjson issues.csv > issues.json
 
-          tail -n +2 issues.csv | while IFS=',' read -r Title Description Phase Module Layer Priority
-          do
-            Title=$(echo "$Title" | xargs)
-            Description=$(echo "$Description" | xargs)
-            Phase=$(echo "$Phase" | xargs)
-            Module=$(echo "$Module" | xargs)
-            Layer=$(echo "$Layer" | xargs)
-            Priority=$(echo "$Priority" | xargs)
+          # Loop through issues
+          jq -c '.[]' issues.json | while read ISSUE; do
+            Title=$(echo "$ISSUE" | jq -r '.Title')
+            Description=$(echo "$ISSUE" | jq -r '.Description')
+            Phase=$(echo "$ISSUE" | jq -r '.Phase')
+            Module=$(echo "$ISSUE" | jq -r '.Module')
+            Layer=$(echo "$ISSUE" | jq -r '.Layer')
+            Priority=$(echo "$ISSUE" | jq -r '.Priority')
 
-            # -----------------------
-            # Labels
-            # -----------------------
-            for LABEL in "$Layer" "$Priority"
-            do
-              if [ -n "$LABEL" ]; then
+            # Create Labels
+            for LABEL in "$Layer" "$Priority"; do
+              if [ "$LABEL" != "null" ] && [ -n "$LABEL" ]; then
                 gh label create "$LABEL" --color F29513 --force || true
                 sleep 1
               fi
             done
 
-            # -----------------------
-            # Milestones
-            # -----------------------
-            if [ -n "$Phase" ]; then
+            # Create Milestone
+            if [ "$Phase" != "null" ] && [ -n "$Phase" ]; then
               EXISTS=$(gh api repos/${{ github.repository }}/milestones --paginate --jq ".[] | select(.title==\"$Phase\") | .title")
               if [ -z "$EXISTS" ]; then
+                echo "Creating milestone: $Phase"
                 gh api repos/${{ github.repository }}/milestones -f title="$Phase" || true
                 sleep 1
               fi
             fi
           done
 
-      - name: Import or Update Issues
+      - name: Create or Update Issues
         run: |
-          tail -n +2 issues.csv | while IFS=',' read -r Title Description Phase Module Layer Priority
-          do
-            Title=$(echo "$Title" | xargs)
-            Description=$(echo "$Description" | xargs)
-            Phase=$(echo "$Phase" | xargs)
-            Module=$(echo "$Module" | xargs)
-            Layer=$(echo "$Layer" | xargs)
-            Priority=$(echo "$Priority" | xargs)
-
-            echo "Processing issue: $Title"
-
-            # -----------------------
-            # Get milestone number safely
-            # -----------------------
-            MILESTONE_NUMBER=$(gh api repos/${{ github.repository }}/milestones --jq ".[] | select(.title==\"$Phase\") | .number")
-            if [ -z "$MILESTONE_NUMBER" ]; then
-              echo "Milestone '$Phase' not found, skipping issue: $Title"
-              continue
-            fi
+          jq -c '.[]' issues.json | while read ISSUE; do
+            Title=$(echo "$ISSUE" | jq -r '.Title')
+            Description=$(echo "$ISSUE" | jq -r '.Description')
+            Phase=$(echo "$ISSUE" | jq -r '.Phase')
+            Module=$(echo "$ISSUE" | jq -r '.Module')
+            Layer=$(echo "$ISSUE" | jq -r '.Layer')
+            Priority=$(echo "$ISSUE" | jq -r '.Priority')
 
             BODY="### Module: $Module\n\n$Description\n\n**Phase:** $Phase\n**Layer:** $Layer\n**Priority:** $Priority"
 
-            # -----------------------
-            # Check if issue exists by title
-            # -----------------------
+            # Get milestone number
+            MILESTONE_NUMBER=$(gh api repos/${{ github.repository }}/milestones --jq ".[] | select(.title==\"$Phase\") | .number")
+
+            # Check if issue already exists by exact title
             ISSUE_NUMBER=$(gh api repos/${{ github.repository }}/issues --jq ".[] | select(.title==\"$Title\") | .number")
-            
+
             if [ -z "$ISSUE_NUMBER" ]; then
               echo "Creating issue: $Title"
               gh issue create \
