@@ -49,7 +49,6 @@ jobs:
       # -------------------------------
       - name: Create Labels and Milestones
         run: |
-          # Loop through issues
           jq -c '.[]' issues.json | while read ISSUE; do
             Layer=$(echo "$ISSUE" | jq -r '.Layer')
             Priority=$(echo "$ISSUE" | jq -r '.Priority')
@@ -65,7 +64,8 @@ jobs:
 
             # Create milestones if not empty and not exist
             if [ -n "$Phase" ] && [ "$Phase" != "null" ]; then
-              EXISTS=$(gh api repos/${{ github.repository }}/milestones --paginate --jq ".[] | select(.title==\"$Phase\") | .title")
+              EXISTS=$(gh api repos/${{ github.repository }}/milestones --paginate \
+                --jq ".[] | select(.title==\"$Phase\") | .title")
               if [ -z "$EXISTS" ]; then
                 echo "Creating milestone: $Phase"
                 gh api repos/${{ github.repository }}/milestones -f title="$Phase" || true
@@ -79,41 +79,32 @@ jobs:
       # -------------------------------
       - name: Build milestone map
         run: |
-          jq -c '.[]' <(gh api repos/${{ github.repository }}/milestones --paginate) > all_milestones.json
-          declare -A MILESTONE_MAP
-          while read ROW; do
-            TITLE=$(echo "$ROW" | jq -r '.title')
-            NUMBER=$(echo "$ROW" | jq -r '.number')
-            MILESTONE_MAP["$TITLE"]=$NUMBER
-          done < <(jq -c '.[]' all_milestones.json)
+          gh api repos/${{ github.repository }}/milestones --paginate > all_milestones.json
 
-          # Save map to file
-          for K in "${!MILESTONE_MAP[@]}"; do
-            echo "$K=${MILESTONE_MAP[$K]}"
-          done > milestone_map.txt
+          # Save map to file: "TITLE=NUMBER" per line
+          jq -r '.[] | "\(.title)=\(.number)"' all_milestones.json > milestone_map.txt
+
+          echo "Milestone map:"
+          cat milestone_map.txt
 
       # -------------------------------
       # Remove duplicate issues (keep oldest)
       # -------------------------------
       - name: Remove Duplicate Issues
         run: |
-          declare -A MILESTONE_MAP
-          while IFS='=' read -r TITLE NUMBER; do
-            MILESTONE_MAP["$TITLE"]=$NUMBER
-          done < milestone_map.txt
-
           jq -c '.[]' issues.json | while read ISSUE; do
             Title=$(echo "$ISSUE" | jq -r '.Title')
             echo "Checking duplicates for: $Title"
 
-            # List issues with exact title
-            ISSUES=$(gh api repos/${{ github.repository }}/issues --jq ".[] | select(.title==\"$Title\") | .number")
+            # List all open issues with exact title, sorted oldest first
+            ISSUES=$(gh api repos/${{ github.repository }}/issues \
+              --jq "[.[] | select(.title==\"$Title\") | .number] | sort | .[]")
 
-            COUNT=$(echo "$ISSUES" | wc -l)
+            COUNT=$(echo "$ISSUES" | grep -c '[0-9]' || true)
 
             if [ "$COUNT" -gt 1 ]; then
-              echo "Duplicate issues found for $Title"
-              # Keep first, delete rest
+              echo "Duplicate issues found for: $Title"
+              # Keep the first (oldest), delete the rest
               echo "$ISSUES" | tail -n +2 | while read DUP; do
                 echo "Deleting duplicate issue #$DUP"
                 gh issue delete "$DUP" --yes || true
@@ -127,6 +118,7 @@ jobs:
       # -------------------------------
       - name: Create or Update Issues
         run: |
+          # Load milestone map into associative array
           declare -A MILESTONE_MAP
           while IFS='=' read -r TITLE NUMBER; do
             MILESTONE_MAP["$TITLE"]=$NUMBER
@@ -144,20 +136,21 @@ jobs:
 
             MILESTONE_NUMBER=${MILESTONE_MAP["$Phase"]}
 
-            # Check if issue exists
-            ISSUE_NUMBER=$(gh api repos/${{ github.repository }}/issues --jq ".[] | select(.title==\"$Title\") | .number")
+            # Check if issue already exists
+            ISSUE_NUMBER=$(gh api repos/${{ github.repository }}/issues \
+              --jq ".[] | select(.title==\"$Title\") | .number" | head -n 1)
 
             if [ -z "$ISSUE_NUMBER" ]; then
               echo "Creating issue: $Title"
               gh issue create \
                 --title "$Title" \
-                --body "$BODY" \
+                --body "$(printf "$BODY")" \
                 --label "$Layer" \
                 --label "$Priority" \
                 --milestone "$MILESTONE_NUMBER" || true
               sleep 1
             else
-              echo "Updating issue #$ISSUE_NUMBER"
+              echo "Updating issue #$ISSUE_NUMBER: $Title"
               gh issue edit "$ISSUE_NUMBER" \
                 --add-label "$Layer" \
                 --add-label "$Priority" \
