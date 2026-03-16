@@ -1,33 +1,30 @@
 Title,Description,Phase,Module,Layer,Priority
-Auth API Implementation,"Implement authentication API with login/logout",Phase 1,Authentication,Backend,High
-User Management Service,"Implement user profile and role management",Phase 1,User Management,Backend,High
-Job Management Service,"Implement job posting creation and management",Phase 1,Job Management,Backend,High
-Interview Engine Service,"Build AI interview engine for screening and technical rounds",Phase 1,Interview Engine,Backend,High
-Authentication UI,"Create login, registration, and password management screens",Phase 1,Authentication,Frontend,High
-Candidate Portal UI,"Develop candidate dashboard and interview portal",Phase 1,Candidate Portal,Frontend,High
-Recruiter Dashboard UI,"Develop recruiter dashboard for job and candidate management",Phase 1,Recruiter Dashboard,Frontend,High
-Core Schema Design,"Design core database schema for users, roles, jobs, interviews",Phase 1,Database,High
-Interview Related Tables,"Design database tables for AI interview questions and responses",Phase 1,Database,High
-Infrastructure Setup,"Set up cloud infrastructure, CI/CD, monitoring",Phase 1,DevOps,High
-
-Coding Assessment Service,"Implement coding assessment backend for multi-language support",Phase 2,Coding Assessment,Backend,Medium
-Resume Intelligence Service,"Implement resume parsing, skill extraction, and scoring",Phase 2,Resume Intelligence,Backend,Medium
-Coding Editor UI,"Develop candidate coding editor interface",Phase 2,Coding Assessment,Frontend,Medium
-Analytics Dashboard UI,"Build recruiter analytics dashboard for candidate pipeline and stats",Phase 2,Analytics Dashboard,Frontend,Medium
-Coding System Schema,"Database schema for coding challenges, test cases, results",Phase 2,Database,Medium
-Code Execution Sandbox,"Set up sandbox environment for safe code execution",Phase 2,DevOps,Medium
-
-Voice Interview Service,"Implement AI voice interview backend",Phase 3,Voice Interview,Backend,Medium
-Video Interview Service,"Implement AI video interview backend",Phase 3,Video Interview,Backend,Medium
-AI Evaluation Improvements,"Enhance AI evaluation engine for scoring and recommendations",Phase 3,AI Evaluation,Backend,Medium
-Voice Interview UI,"Build voice interview interface for candidates",Phase 3,Voice Interview,Frontend,Medium
-Video Interview UI,"Build video interview interface for candidates",Phase 3,Video Interview,Frontend,Medium
-Media Storage Schema,"Database schema for storing audio/video recordings",Phase 3,Database,Medium
-Media Infrastructure,"Setup infrastructure for streaming and storing media",Phase 3,DevOps,Medium
-
-Multi-Tenant Architecture,"Implement tenant isolation, role-based access, and multi-organization support",Phase 4,Multi-Tenant,Backend,Medium
-Subscription System,"Implement SaaS subscription plans and billing backend",Phase 4,Subscription,Backend,Medium
-Company Admin Portal,"Build portal for company admin to manage tenants and users",Phase 4,Admin Portal,Frontend,Medium
-Billing UI,"Build UI for managing subscriptions and billing",Phase 4,Billing,Frontend,Medium
-SaaS Billing Schema,"Database schema for subscriptions, invoices, and payments",Phase 4,Database,Medium
-Scaling Infrastructure,"Implement auto-scaling, multi-tenant support, and monitoring",Phase 4,DevOps,Medium
+"Auth API Implementation","Implement authentication API with login/logout",Phase 1,Authentication,Backend,High
+"User Management Service","Implement user profile and role management",Phase 1,User Management,Backend,High
+"Job Management Service","Implement job posting creation and management",Phase 1,Job Management,Backend,High
+"Interview Engine Service","Build AI interview engine for screening and technical rounds",Phase 1,Interview Engine,Backend,High
+"Authentication UI","Create login, registration, and password management screens",Phase 1,Authentication,Frontend,High
+"Candidate Portal UI","Develop candidate dashboard and interview portal",Phase 1,Candidate Portal,Frontend,High
+"Recruiter Dashboard UI","Develop recruiter dashboard for job and candidate management",Phase 1,Recruiter Dashboard,Frontend,High
+"Core Schema Design","Design core database schema for users, roles, jobs, interviews",Phase 1,Database,High
+"Interview Related Tables","Design database tables for AI interview questions and responses",Phase 1,Database,High
+"Infrastructure Setup","Set up cloud infrastructure, CI/CD, monitoring",Phase 1,DevOps,High
+"Coding Assessment Service","Implement coding assessment backend for multi-language support",Phase 2,Coding Assessment,Backend,Medium
+"Resume Intelligence Service","Implement resume parsing, skill extraction, and scoring",Phase 2,Resume Intelligence,Backend,Medium
+"Coding Editor UI","Develop candidate coding editor interface",Phase 2,Coding Assessment,Frontend,Medium
+"Analytics Dashboard UI","Build recruiter analytics dashboard for candidate pipeline and stats",Phase 2,Analytics Dashboard,Frontend,Medium
+"Coding System Schema","Database schema for coding challenges, test cases, results",Phase 2,Database,Medium
+"Code Execution Sandbox","Set up sandbox environment for safe code execution",Phase 2,DevOps,Medium
+"Voice Interview Service","Implement AI voice interview backend",Phase 3,Voice Interview,Backend,Medium
+"Video Interview Service","Implement AI video interview backend",Phase 3,Video Interview,Backend,Medium
+"AI Evaluation Improvements","Enhance AI evaluation engine for scoring and recommendations",Phase 3,AI Evaluation,Backend,Medium
+"Voice Interview UI","Build voice interview interface for candidates",Phase 3,Voice Interview,Frontend,Medium
+"Video Interview UI","Build video interview interface for candidates",Phase 3,Video Interview,Frontend,Medium
+"Media Storage Schema","Database schema for storing audio/video recordings",Phase 3,Database,Medium
+"Media Infrastructure","Setup infrastructure for streaming and storing media",Phase 3,DevOps,Medium
+"Multi-Tenant Architecture","Implement tenant isolation, role-based access, and multi-organization support",Phase 4,Multi-Tenant,Backend,Medium
+"Subscription System","Implement SaaS subscription plans and billing backend",Phase 4,Subscription,Backend,Medium
+"Company Admin Portal","Build portal for company admin to manage tenants and users",Phase 4,Admin Portal,Frontend,Medium
+"Billing UI","Build UI for managing subscriptions and billing",Phase 4,Billing,Frontend,Medium
+"SaaS Billing Schema","Database schema for subscriptions, invoices, and payments",Phase 4,Database,Medium
+"Scaling Infrastructure","Implement auto-scaling, multi-tenant support, and monitoring",Phase 4,DevOps,Medium
