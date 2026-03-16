@@ -8,7 +8,7 @@ Candidate Portal UI,Develop candidate dashboard and interview portal,Phase 1,Can
 Recruiter Dashboard UI,Develop recruiter dashboard for job and candidate management,Phase 1,Recruiter Dashboard,Frontend,High
 Core Schema Design,Design core database schema for users, roles, jobs, interviews,Phase 1,Database,High
 Interview Related Tables,Design database tables for AI interview questions and responses,Phase 1,Database,High
-Infrastructure Setup,Set up cloud infrastructure, CI/CD, monitoring,Phase 1,DevOps,High
+Infrastructure Setup,Set up cloud infrastructure CI/CD, monitoring,Phase 1,DevOps,High
 
 Coding Assessment Service,Implement coding assessment backend for multi-language support,Phase 2,Coding Assessment,Backend,Medium
 Resume Intelligence Service,Implement resume parsing, skill extraction, and scoring,Phase 2,Resume Intelligence,Backend,Medium
