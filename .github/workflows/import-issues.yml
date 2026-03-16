@@ -1,4 +1,4 @@
-name: Import or Update Issues from CSV
+name: Import / Update Issues from CSV
 
 on:
   workflow_dispatch:
@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Repository
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Install GitHub CLI
@@ -44,10 +44,7 @@ jobs:
             EXISTS=$(gh api repos/${{ github.repository }}/milestones --jq ".[] | select(.title==\"$TITLE\") | .title")
 
             if [ -z "$EXISTS" ]; then
-              echo "Creating milestone: $TITLE"
               gh api repos/${{ github.repository }}/milestones -f title="$TITLE"
-            else
-              echo "Milestone already exists: $TITLE"
             fi
           }
 
@@ -55,13 +52,41 @@ jobs:
           create_milestone "Phase 2"
           create_milestone "Phase 3"
 
-      - name: Import or Update Issues
+      - name: Remove Duplicate Issues
         run: |
           while IFS=',' read -r Title Description Phase Layer Priority
           do
             if [ "$Title" != "Title" ]; then
 
-              echo "Processing: $Title"
+              echo "Checking duplicates for: $Title"
+
+              ISSUES=$(gh issue list \
+                --search "$Title in:title" \
+                --json number,title,createdAt \
+                --jq ".[] | select(.title==\"$Title\") | .number")
+
+              COUNT=$(echo "$ISSUES" | wc -l)
+
+              if [ "$COUNT" -gt 1 ]; then
+                echo "Duplicate issues found for $Title"
+
+                FIRST=$(echo "$ISSUES" | head -n 1)
+
+                echo "$ISSUES" | tail -n +2 | while read DUP
+                do
+                  echo "Deleting duplicate issue #$DUP"
+                  gh issue delete "$DUP" --yes
+                done
+              fi
+
+            fi
+          done < issues.csv
+
+      - name: Import or Update Issues
+        run: |
+          while IFS=',' read -r Title Description Phase Layer Priority
+          do
+            if [ "$Title" != "Title" ]; then
 
               ISSUE_NUMBER=$(gh issue list \
                 --search "$Title in:title" \
@@ -87,6 +112,7 @@ jobs:
                   --add-label "$Layer" \
                   --add-label "$Priority" \
                   --milestone "$Phase"
+
               fi
 
             fi
