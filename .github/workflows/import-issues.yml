@@ -3,6 +3,10 @@ name: Import Issues from CSV
 on:
   workflow_dispatch:
 
+permissions:
+  issues: write
+  contents: read
+
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
@@ -24,7 +28,7 @@ jobs:
 
       - name: Import Issues
         run: |
-          while IFS=',' read -r Title Description Phase Layer Priority
+          tail -n +2 issues.csv | while IFS=',' read -r Title Description Phase Layer Priority
           do
             echo "Creating issue: $Title"
 
@@ -34,4 +38,4 @@ jobs:
               --label "$Layer" \
               || echo "Failed for $Title"
 
-          done < <(tail -n +2 issues.csv)
+          done
