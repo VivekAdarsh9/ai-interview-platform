@@ -19,10 +19,10 @@ jobs:
           sudo apt update
           sudo apt install gh -y
 
-      - name: Authenticate
+      - name: Authenticate GitHub CLI
         run: echo "${{ secrets.GITHUB_TOKEN }}" | gh auth login --with-token
 
-      - name: Import issues
+      - name: Import Issues
         run: |
           tail -n +2 issues.csv | while IFS=, read -r title body labels milestone
           do
