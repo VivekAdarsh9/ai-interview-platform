@@ -16,7 +16,7 @@ jobs:
 
     steps:
       # ----------------------------------------
-      # Step 1: Checkout repo
+      # Step 1: Checkout repository
       # ----------------------------------------
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -36,7 +36,7 @@ jobs:
         run: echo "${{ secrets.PAT_TOKEN }}" | gh auth login --with-token
 
       # ----------------------------------------
-      # Step 4: Prepare CSV lines
+      # Step 4: Read CSV into array
       # ----------------------------------------
       - name: Read CSV into array
         run: |
@@ -44,13 +44,21 @@ jobs:
           mapfile -t LINES < <(tail -n +2 issues.csv)
 
       # ----------------------------------------
-      # Step 5: Create labels and milestones
+      # Step 5: Create Labels and Milestones
       # ----------------------------------------
       - name: Ensure Labels and Milestones Exist
         run: |
           for LINE in "${LINES[@]}"
           do
-            IFS=',' read -r Title Description Phase Layer Priority <<< "$LINE"
+            IFS=',' read -r Title Description Phase Module Layer Priority <<< "$LINE"
+
+            # Trim spaces
+            Title=$(echo "$Title" | xargs)
+            Description=$(echo "$Description" | xargs)
+            Phase=$(echo "$Phase" | xargs)
+            Module=$(echo "$Module" | xargs)
+            Layer=$(echo "$Layer" | xargs)
+            Priority=$(echo "$Priority" | xargs)
 
             # Labels
             for LABEL in "$Layer" "$Priority"
@@ -74,16 +82,17 @@ jobs:
           done
 
       # ----------------------------------------
-      # Step 6: Remove duplicate issues (keep oldest)
+      # Step 6: Remove Duplicate Issues
       # ----------------------------------------
       - name: Remove Duplicate Issues
         run: |
           for LINE in "${LINES[@]}"
           do
-            IFS=',' read -r Title Description Phase Layer Priority <<< "$LINE"
+            IFS=',' read -r Title Description Phase Module Layer Priority <<< "$LINE"
+            Title=$(echo "$Title" | xargs)
             echo "Checking duplicates for: $Title"
 
-            ISSUES=$(gh issue list --search "$Title in:title" --json number,title,createdAt --jq ".[] | select(.title==\"$Title\") | .number")
+            ISSUES=$(gh issue list --search "$Title in:title" --json number,title --jq ".[] | select(.title==\"$Title\") | .number")
 
             COUNT=$(echo "$ISSUES" | wc -l)
 
@@ -99,20 +108,32 @@ jobs:
           done
 
       # ----------------------------------------
-      # Step 7: Create or update issues
+      # Step 7: Import or Update Issues
       # ----------------------------------------
       - name: Import or Update Issues
         run: |
           for LINE in "${LINES[@]}"
           do
-            IFS=',' read -r Title Description Phase Layer Priority <<< "$LINE"
-            echo "Processing: $Title"
+            IFS=',' read -r Title Description Phase Module Layer Priority <<< "$LINE"
+
+            # Trim spaces
+            Title=$(echo "$Title" | xargs)
+            Description=$(echo "$Description" | xargs)
+            Phase=$(echo "$Phase" | xargs)
+            Module=$(echo "$Module" | xargs)
+            Layer=$(echo "$Layer" | xargs)
+            Priority=$(echo "$Priority" | xargs)
+
+            echo "Processing issue: $Title"
 
             # Get milestone number
             MILESTONE_NUMBER=$(gh api repos/${{ github.repository }}/milestones --jq ".[] | select(.title==\"$Phase\") | .number")
+            if [ -z "$MILESTONE_NUMBER" ]; then
+              echo "Warning: milestone '$Phase' not found, skipping issue creation"
+              continue
+            fi
 
-            # Build body
-            BODY="$Description\n\nPhase: $Phase\nLayer: $Layer\nPriority: $Priority"
+            BODY="$Description\n\nPhase: $Phase\nModule: $Module\nLayer: $Layer\nPriority: $Priority"
 
             # Check if issue exists
             ISSUE_NUMBER=$(gh issue list --search "$Title in:title" --json number,title --jq ".[] | select(.title==\"$Title\") | .number")
