@@ -26,44 +26,37 @@ jobs:
       - name: Authenticate GitHub CLI
         run: echo "${{ secrets.GITHUB_TOKEN }}" | gh auth login --with-token
 
-      - name: Create Labels if not exists
+      - name: Create Labels
         run: |
           gh label create Backend --color FF5733 --force || true
           gh label create Frontend --color 33C3FF --force || true
           gh label create DevOps --color 8E44AD --force || true
           gh label create Database --color 2ECC71 --force || true
-
           gh label create High --color FF0000 --force || true
           gh label create Medium --color F1C40F --force || true
-          gh label create Low --color2ECC71 --force || true
+          gh label create Low --color 2ECC71 --force || true
 
       - name: Create Milestones
         run: |
-          gh api repos/${{ github.repository }}/milestones \
-            -f title="Phase 1" || true
-
-          gh api repos/${{ github.repository }}/milestones \
-            -f title="Phase 2" || true
-
-          gh api repos/${{ github.repository }}/milestones \
-            -f title="Phase 3" || true
+          gh api repos/${{ github.repository }}/milestones -f title="Phase 1" || true
+          gh api repos/${{ github.repository }}/milestones -f title="Phase 2" || true
+          gh api repos/${{ github.repository }}/milestones -f title="Phase 3" || true
 
       - name: Import Issues
         run: |
-          tail -n +2 issues.csv | while IFS=',' read -r Title Description Phase Layer Priority
+          while IFS=',' read -r Title Description Phase Layer Priority
           do
-            echo "Creating issue: $Title"
+            if [ "$Title" != "Title" ]; then
+              echo "Creating issue: $Title"
 
-            gh issue create \
-              --title "$Title" \
-              --body "$Description
+              BODY="$Description\n\nPhase: $Phase\nLayer: $Layer\nPriority: $Priority"
 
-Phase: $Phase
-Layer: $Layer
-Priority: $Priority" \
-              --label "$Layer" \
-              --label "$Priority" \
-              --milestone "$Phase" \
-              || echo "Failed for $Title"
-
-          done
+              gh issue create \
+                --title "$Title" \
+                --body "$BODY" \
+                --label "$Layer" \
+                --label "$Priority" \
+                --milestone "$Phase" \
+                || echo "Failed for $Title"
+            fi
+          done < issues.csv
