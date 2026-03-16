@@ -31,22 +31,11 @@ jobs:
       # ------------------------------------------------
       - name: Read CSV
         run: |
-          # Fix Windows line endings
-          sed -i 's/\r$//' issues.csv
+          sed -i 's/\r$//' issues.csv  # fix Windows line endings
           mapfile -t LINES < <(tail -n +2 issues.csv)
 
       # ------------------------------------------------
-      # Cache existing milestones and labels
-      # ------------------------------------------------
-      - name: Cache Milestones and Labels
-        run: |
-          EXISTING_MILESTONES=$(gh api repos/${{ github.repository }}/milestones --paginate --jq '.[].title')
-          EXISTING_LABELS=$(gh label list --json name --jq '.[].name')
-          echo "$EXISTING_MILESTONES" > milestones.txt
-          echo "$EXISTING_LABELS" > labels.txt
-
-      # ------------------------------------------------
-      # Create Labels and Milestones
+      # Create Labels and Milestones (rate-limit safe)
       # ------------------------------------------------
       - name: Ensure Labels and Milestones Exist
         run: |
@@ -57,25 +46,23 @@ jobs:
             # Labels
             for LABEL in "$Layer" "$Priority"
             do
-              if ! grep -Fxq "$LABEL" labels.txt; then
-                echo "Creating label: $LABEL"
+              if [ -n "$LABEL" ]; then
+                echo "Creating label (if not exists): $LABEL"
                 gh label create "$LABEL" --color F29513 --force || true
-                labels.txt+=("$LABEL")
                 sleep 1
               fi
             done
 
             # Milestones
-            if ! grep -Fxq "$Phase" milestones.txt; then
-              echo "Creating milestone: $Phase"
-              gh api repos/${{ github.repository }}/milestones -f title="$Phase"
-              milestones.txt+=("$Phase")
+            if [ -n "$Phase" ]; then
+              echo "Creating milestone (if not exists): $Phase"
+              gh api repos/${{ github.repository }}/milestones -f title="$Phase" || true
               sleep 1
             fi
           done
 
       # ------------------------------------------------
-      # Remove Duplicate Issues
+      # Remove Duplicate Issues (keep oldest)
       # ------------------------------------------------
       - name: Remove Duplicate Issues
         run: |
@@ -94,14 +81,14 @@ jobs:
               echo "$ISSUES" | tail -n +2 | while read DUP
               do
                 echo "Deleting duplicate issue #$DUP"
-                gh issue delete "$DUP" --yes
+                gh issue delete "$DUP" --yes || true
                 sleep 1
               done
             fi
           done
 
       # ------------------------------------------------
-      # Create or Update Issues
+      # Create or Update Issues (rate-limit safe)
       # ------------------------------------------------
       - name: Import or Update Issues
         run: |
@@ -116,11 +103,19 @@ jobs:
 
             if [ -z "$ISSUE_NUMBER" ]; then
               echo "Creating issue: $Title"
-              gh issue create --title "$Title" --body "$BODY" --label "$Layer" --label "$Priority" --milestone "$Phase"
+              gh issue create \
+                --title "$Title" \
+                --body "$BODY" \
+                --label "$Layer" \
+                --label "$Priority" \
+                --milestone "$Phase" || true
               sleep 1
             else
               echo "Updating issue #$ISSUE_NUMBER"
-              gh issue edit "$ISSUE_NUMBER" --add-label "$Layer" --add-label "$Priority" --milestone "$Phase"
+              gh issue edit "$ISSUE_NUMBER" \
+                --add-label "$Layer" \
+                --add-label "$Priority" \
+                --milestone "$Phase" || true
               sleep 1
             fi
           done
