@@ -3,6 +3,9 @@ name: Import Issues from CSV
 on:
   workflow_dispatch:
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   import:
     runs-on: ubuntu-latest
@@ -21,10 +24,10 @@ jobs:
 
       - name: Import issues
         run: |
-          while IFS=, read -r title body labels milestone
+          tail -n +2 issues.csv | while IFS=, read -r title body labels milestone
           do
             gh issue create \
               --title "$title" \
               --body "$body" \
               --label "$labels"
-          done < issues.csv
+          done
