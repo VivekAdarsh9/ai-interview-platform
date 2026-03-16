@@ -27,36 +27,50 @@ jobs:
         run: echo "${{ secrets.PAT_TOKEN }}" | gh auth login --with-token
 
       # ------------------------------------------------
-      # Create Labels Dynamically From CSV
+      # Read CSV into Bash array
       # ------------------------------------------------
-      - name: Ensure Labels Exist
+      - name: Read CSV
         run: |
-          tail -n +2 issues.csv | while IFS=',' read -r Title Description Phase Layer Priority
-          do
-            if [ -n "$Layer" ]; then
-              gh label create "$Layer" --color F29513 --force || true
-            fi
-
-            if [ -n "$Priority" ]; then
-              gh label create "$Priority" --color B60205 --force || true
-            fi
-          done
+          # Fix Windows line endings
+          sed -i 's/\r$//' issues.csv
+          mapfile -t LINES < <(tail -n +2 issues.csv)
 
       # ------------------------------------------------
-      # Create Milestones Dynamically From CSV
+      # Cache existing milestones and labels
       # ------------------------------------------------
-      - name: Ensure Milestones Exist
+      - name: Cache Milestones and Labels
         run: |
-          tail -n +2 issues.csv | while IFS=',' read -r Title Description Phase Layer Priority
-          do
-            if [ -n "$Phase" ]; then
-              EXISTS=$(gh api repos/${{ github.repository }}/milestones --paginate \
-                --jq ".[] | select(.title==\"$Phase\") | .title")
+          EXISTING_MILESTONES=$(gh api repos/${{ github.repository }}/milestones --paginate --jq '.[].title')
+          EXISTING_LABELS=$(gh label list --json name --jq '.[].name')
+          echo "$EXISTING_MILESTONES" > milestones.txt
+          echo "$EXISTING_LABELS" > labels.txt
 
-              if [ -z "$EXISTS" ]; then
-                echo "Creating milestone: $Phase"
-                gh api repos/${{ github.repository }}/milestones -f title="$Phase"
+      # ------------------------------------------------
+      # Create Labels and Milestones
+      # ------------------------------------------------
+      - name: Ensure Labels and Milestones Exist
+        run: |
+          for LINE in "${LINES[@]}"
+          do
+            IFS=',' read -r Title Description Phase Layer Priority <<< "$LINE"
+
+            # Labels
+            for LABEL in "$Layer" "$Priority"
+            do
+              if ! grep -Fxq "$LABEL" labels.txt; then
+                echo "Creating label: $LABEL"
+                gh label create "$LABEL" --color F29513 --force || true
+                labels.txt+=("$LABEL")
+                sleep 1
               fi
+            done
+
+            # Milestones
+            if ! grep -Fxq "$Phase" milestones.txt; then
+              echo "Creating milestone: $Phase"
+              gh api repos/${{ github.repository }}/milestones -f title="$Phase"
+              milestones.txt+=("$Phase")
+              sleep 1
             fi
           done
 
@@ -65,14 +79,12 @@ jobs:
       # ------------------------------------------------
       - name: Remove Duplicate Issues
         run: |
-          tail -n +2 issues.csv | while IFS=',' read -r Title Description Phase Layer Priority
+          for LINE in "${LINES[@]}"
           do
+            IFS=',' read -r Title Description Phase Layer Priority <<< "$LINE"
             echo "Checking duplicates for: $Title"
 
-            ISSUES=$(gh issue list \
-              --search "$Title in:title" \
-              --json number,title,createdAt \
-              --jq ".[] | select(.title==\"$Title\") | .number")
+            ISSUES=$(gh issue list --search "$Title in:title" --json number,title --jq ".[] | select(.title==\"$Title\") | .number")
 
             COUNT=$(echo "$ISSUES" | wc -l)
 
@@ -83,9 +95,9 @@ jobs:
               do
                 echo "Deleting duplicate issue #$DUP"
                 gh issue delete "$DUP" --yes
+                sleep 1
               done
             fi
-
           done
 
       # ------------------------------------------------
@@ -93,34 +105,22 @@ jobs:
       # ------------------------------------------------
       - name: Import or Update Issues
         run: |
-          tail -n +2 issues.csv | while IFS=',' read -r Title Description Phase Layer Priority
+          for LINE in "${LINES[@]}"
           do
+            IFS=',' read -r Title Description Phase Layer Priority <<< "$LINE"
             echo "Processing: $Title"
 
-            ISSUE_NUMBER=$(gh issue list \
-              --search "$Title in:title" \
-              --json number,title \
-              --jq ".[] | select(.title==\"$Title\") | .number")
+            ISSUE_NUMBER=$(gh issue list --search "$Title in:title" --json number,title --jq ".[] | select(.title==\"$Title\") | .number")
 
             BODY="$Description\n\nPhase: $Phase\nLayer: $Layer\nPriority: $Priority"
 
             if [ -z "$ISSUE_NUMBER" ]; then
               echo "Creating issue: $Title"
-
-              gh issue create \
-                --title "$Title" \
-                --body "$BODY" \
-                --label "$Layer" \
-                --label "$Priority" \
-                --milestone "$Phase"
-
+              gh issue create --title "$Title" --body "$BODY" --label "$Layer" --label "$Priority" --milestone "$Phase"
+              sleep 1
             else
               echo "Updating issue #$ISSUE_NUMBER"
-
-              gh issue edit "$ISSUE_NUMBER" \
-                --add-label "$Layer" \
-                --add-label "$Priority" \
-                --milestone "$Phase"
+              gh issue edit "$ISSUE_NUMBER" --add-label "$Layer" --add-label "$Priority" --milestone "$Phase"
+              sleep 1
             fi
-
           done
