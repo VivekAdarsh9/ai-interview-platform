@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Repository
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Install GitHub CLI
@@ -24,11 +24,14 @@ jobs:
 
       - name: Import Issues
         run: |
-          tail -n +2 issues.csv | while IFS=, read -r Title Description Phase Layer Priority
+          while IFS=',' read -r Title Description Phase Layer Priority
           do
+            echo "Creating issue: $Title"
+
             gh issue create \
               --title "$Title" \
               --body "$Description" \
-              --label "$Layer,$Priority" \
-              --milestone "$Phase"
-          done
+              --label "$Layer" \
+              || echo "Failed for $Title"
+
+          done < <(tail -n +2 issues.csv)
