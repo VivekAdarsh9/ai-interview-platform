@@ -26,21 +26,25 @@ jobs:
       - name: Authenticate GitHub CLI
         run: echo "${{ secrets.PAT_TOKEN }}" | gh auth login --with-token
 
-      - name: Parse CSV and Create Labels / Milestones
+      # ------------------------------------------------
+      # Convert CSV to JSON for reliable parsing
+      # ------------------------------------------------
+      - name: Convert CSV to JSON
         run: |
-          # Convert CSV to JSON (handles commas inside quotes)
           csvjson issues.csv > issues.json
 
-          # Loop through issues
+      # ------------------------------------------------
+      # Create Labels & Milestones (ensure exists)
+      # ------------------------------------------------
+      - name: Ensure Labels and Milestones Exist
+        run: |
           jq -c '.[]' issues.json | while read ISSUE; do
             Title=$(echo "$ISSUE" | jq -r '.Title')
-            Description=$(echo "$ISSUE" | jq -r '.Description')
             Phase=$(echo "$ISSUE" | jq -r '.Phase')
-            Module=$(echo "$ISSUE" | jq -r '.Module')
             Layer=$(echo "$ISSUE" | jq -r '.Layer')
             Priority=$(echo "$ISSUE" | jq -r '.Priority')
 
-            # Create Labels
+            # Labels
             for LABEL in "$Layer" "$Priority"; do
               if [ "$LABEL" != "null" ] && [ -n "$LABEL" ]; then
                 gh label create "$LABEL" --color F29513 --force || true
@@ -48,10 +52,10 @@ jobs:
               fi
             done
 
-            # Create Milestone
+            # Milestone
             if [ "$Phase" != "null" ] && [ -n "$Phase" ]; then
-              EXISTS=$(gh api repos/${{ github.repository }}/milestones --paginate --jq ".[] | select(.title==\"$Phase\") | .title")
-              if [ -z "$EXISTS" ]; then
+              MILESTONE_EXISTS=$(gh api repos/${{ github.repository }}/milestones --paginate --jq ".[] | select(.title==\"$Phase\") | .title")
+              if [ -z "$MILESTONE_EXISTS" ]; then
                 echo "Creating milestone: $Phase"
                 gh api repos/${{ github.repository }}/milestones -f title="$Phase" || true
                 sleep 1
@@ -59,6 +63,9 @@ jobs:
             fi
           done
 
+      # ------------------------------------------------
+      # Create or Update Issues (using milestone number)
+      # ------------------------------------------------
       - name: Create or Update Issues
         run: |
           jq -c '.[]' issues.json | while read ISSUE; do
@@ -71,27 +78,41 @@ jobs:
 
             BODY="### Module: $Module\n\n$Description\n\n**Phase:** $Phase\n**Layer:** $Layer\n**Priority:** $Priority"
 
-            # Get milestone number
-            MILESTONE_NUMBER=$(gh api repos/${{ github.repository }}/milestones --jq ".[] | select(.title==\"$Phase\") | .number")
+            # Get milestone number safely
+            MILESTONE_NUMBER=$(gh api repos/${{ github.repository }}/milestones --paginate --jq ".[] | select(.title==\"$Phase\") | .number")
 
-            # Check if issue already exists by exact title
+            # Check if issue exists (exact match)
             ISSUE_NUMBER=$(gh api repos/${{ github.repository }}/issues --jq ".[] | select(.title==\"$Title\") | .number")
 
             if [ -z "$ISSUE_NUMBER" ]; then
               echo "Creating issue: $Title"
-              gh issue create \
-                --title "$Title" \
-                --body "$BODY" \
-                --label "$Layer" \
-                --label "$Priority" \
-                --milestone "$MILESTONE_NUMBER" || true
+              if [ -n "$MILESTONE_NUMBER" ]; then
+                gh issue create \
+                  --title "$Title" \
+                  --body "$BODY" \
+                  --label "$Layer" \
+                  --label "$Priority" \
+                  --milestone "$MILESTONE_NUMBER" || true
+              else
+                gh issue create \
+                  --title "$Title" \
+                  --body "$BODY" \
+                  --label "$Layer" \
+                  --label "$Priority" || true
+              fi
               sleep 1
             else
               echo "Updating issue #$ISSUE_NUMBER"
-              gh issue edit "$ISSUE_NUMBER" \
-                --add-label "$Layer" \
-                --add-label "$Priority" \
-                --milestone "$MILESTONE_NUMBER" || true
+              if [ -n "$MILESTONE_NUMBER" ]; then
+                gh issue edit "$ISSUE_NUMBER" \
+                  --add-label "$Layer" \
+                  --add-label "$Priority" \
+                  --milestone "$MILESTONE_NUMBER" || true
+              else
+                gh issue edit "$ISSUE_NUMBER" \
+                  --add-label "$Layer" \
+                  --add-label "$Priority" || true
+              fi
               sleep 1
             fi
           done
