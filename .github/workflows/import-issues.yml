@@ -7,65 +7,131 @@ permissions:
   issues: write
   contents: read
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   import:
     runs-on: ubuntu-latest
+
     steps:
+      # -------------------------------
+      # Checkout repo
+      # -------------------------------
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install GitHub CLI and csvkit
+      # -------------------------------
+      # Install dependencies
+      # -------------------------------
+      - name: Install GitHub CLI, jq, csvkit
         run: |
           sudo apt update
           sudo apt install -y gh jq python3-pip
           pip3 install csvkit
 
+      # -------------------------------
+      # Authenticate GitHub CLI
+      # -------------------------------
       - name: Authenticate GitHub CLI
         run: echo "${{ secrets.PAT_TOKEN }}" | gh auth login --with-token
 
+      # -------------------------------
+      # Convert CSV to JSON (handles commas inside quotes)
+      # -------------------------------
       - name: Convert CSV to JSON
-        run: csvjson issues.csv > issues.json
-
-      - name: Ensure Labels Exist
         run: |
-          jq -r '.[] | [.Layer, .Priority] | @tsv' issues.json | tr '\t' '\n' | sort -u | while read LABEL; do
-            if [ -n "$LABEL" ] && [ "$LABEL" != "null" ]; then
-              echo "Creating label: $LABEL"
-              gh label create "$LABEL" --color F29513 --force || true
-            fi
-          done
+          sed -i 's/\r$//' issues.csv   # fix Windows line endings
+          csvjson issues.csv > issues.json
 
-      - name: Ensure Milestones Exist
+      # -------------------------------
+      # Create missing labels and milestones
+      # -------------------------------
+      - name: Create Labels and Milestones
         run: |
-          jq -r '.[] | .Phase' issues.json | sort -u | while read PHASE; do
-            if [ -n "$PHASE" ] && [ "$PHASE" != "null" ]; then
-              EXISTS=$(gh api repos/${{ github.repository }}/milestones --paginate --jq ".[] | select(.title==\"$PHASE\") | .title")
+          # Loop through issues
+          jq -c '.[]' issues.json | while read ISSUE; do
+            Layer=$(echo "$ISSUE" | jq -r '.Layer')
+            Priority=$(echo "$ISSUE" | jq -r '.Priority')
+            Phase=$(echo "$ISSUE" | jq -r '.Phase')
+
+            # Create labels if not empty
+            for LABEL in "$Layer" "$Priority"; do
+              if [ -n "$LABEL" ] && [ "$LABEL" != "null" ]; then
+                gh label create "$LABEL" --color F29513 --force || true
+                sleep 1
+              fi
+            done
+
+            # Create milestones if not empty and not exist
+            if [ -n "$Phase" ] && [ "$Phase" != "null" ]; then
+              EXISTS=$(gh api repos/${{ github.repository }}/milestones --paginate --jq ".[] | select(.title==\"$Phase\") | .title")
               if [ -z "$EXISTS" ]; then
-                echo "Creating milestone: $PHASE"
-                gh api repos/${{ github.repository }}/milestones -f title="$PHASE"
+                echo "Creating milestone: $Phase"
+                gh api repos/${{ github.repository }}/milestones -f title="$Phase" || true
+                sleep 1
               fi
             fi
           done
 
-      - name: Build Milestone Map
-        id: milestones
+      # -------------------------------
+      # Build milestone lookup map
+      # -------------------------------
+      - name: Build milestone map
         run: |
-          echo "::group::Fetching milestone numbers"
-          gh api repos/${{ github.repository }}/milestones --paginate --jq '.[] | {title: .title, number: .number}' > all_milestones.json
-          cat all_milestones.json
-          echo "::endgroup::"
-
-      - name: Create or Update Issues
-        run: |
-          # Build milestone lookup
+          jq -c '.[]' <(gh api repos/${{ github.repository }}/milestones --paginate) > all_milestones.json
           declare -A MILESTONE_MAP
-          for row in $(jq -c '.[]' all_milestones.json); do
-            title=$(echo $row | jq -r '.title')
-            number=$(echo $row | jq -r '.number')
-            MILESTONE_MAP["$title"]=$number
+          while read ROW; do
+            TITLE=$(echo "$ROW" | jq -r '.title')
+            NUMBER=$(echo "$ROW" | jq -r '.number')
+            MILESTONE_MAP["$TITLE"]=$NUMBER
+          done < <(jq -c '.[]' all_milestones.json)
+
+          # Save map to file
+          for K in "${!MILESTONE_MAP[@]}"; do
+            echo "$K=${MILESTONE_MAP[$K]}"
+          done > milestone_map.txt
+
+      # -------------------------------
+      # Remove duplicate issues (keep oldest)
+      # -------------------------------
+      - name: Remove Duplicate Issues
+        run: |
+          declare -A MILESTONE_MAP
+          while IFS='=' read -r TITLE NUMBER; do
+            MILESTONE_MAP["$TITLE"]=$NUMBER
+          done < milestone_map.txt
+
+          jq -c '.[]' issues.json | while read ISSUE; do
+            Title=$(echo "$ISSUE" | jq -r '.Title')
+            echo "Checking duplicates for: $Title"
+
+            # List issues with exact title
+            ISSUES=$(gh api repos/${{ github.repository }}/issues --jq ".[] | select(.title==\"$Title\") | .number")
+
+            COUNT=$(echo "$ISSUES" | wc -l)
+
+            if [ "$COUNT" -gt 1 ]; then
+              echo "Duplicate issues found for $Title"
+              # Keep first, delete rest
+              echo "$ISSUES" | tail -n +2 | while read DUP; do
+                echo "Deleting duplicate issue #$DUP"
+                gh issue delete "$DUP" --yes || true
+                sleep 1
+              done
+            fi
           done
 
-          # Loop through CSV issues
+      # -------------------------------
+      # Create or Update Issues
+      # -------------------------------
+      - name: Create or Update Issues
+        run: |
+          declare -A MILESTONE_MAP
+          while IFS='=' read -r TITLE NUMBER; do
+            MILESTONE_MAP["$TITLE"]=$NUMBER
+          done < milestone_map.txt
+
           jq -c '.[]' issues.json | while read ISSUE; do
             Title=$(echo "$ISSUE" | jq -r '.Title')
             Description=$(echo "$ISSUE" | jq -r '.Description')
@@ -78,24 +144,24 @@ jobs:
 
             MILESTONE_NUMBER=${MILESTONE_MAP["$Phase"]}
 
-            # Check if issue already exists
+            # Check if issue exists
             ISSUE_NUMBER=$(gh api repos/${{ github.repository }}/issues --jq ".[] | select(.title==\"$Title\") | .number")
 
             if [ -z "$ISSUE_NUMBER" ]; then
               echo "Creating issue: $Title"
-              CMD="gh issue create --title \"$Title\" --body \"$BODY\""
-              [ -n "$Layer" ] && [ "$Layer" != "null" ] && CMD="$CMD --label \"$Layer\""
-              [ -n "$Priority" ] && [ "$Priority" != "null" ] && CMD="$CMD --label \"$Priority\""
-              [ -n "$MILESTONE_NUMBER" ] && CMD="$CMD --milestone $MILESTONE_NUMBER"
-              eval $CMD
+              gh issue create \
+                --title "$Title" \
+                --body "$BODY" \
+                --label "$Layer" \
+                --label "$Priority" \
+                --milestone "$MILESTONE_NUMBER" || true
+              sleep 1
             else
               echo "Updating issue #$ISSUE_NUMBER"
-              CMD="gh issue edit $ISSUE_NUMBER"
-              [ -n "$Layer" ] && [ "$Layer" != "null" ] && CMD="$CMD --add-label \"$Layer\""
-              [ -n "$Priority" ] && [ "$Priority" != "null" ] && CMD="$CMD --add-label \"$Priority\""
-              [ -n "$MILESTONE_NUMBER" ] && CMD="$CMD --milestone $MILESTONE_NUMBER"
-              eval $CMD
+              gh issue edit "$ISSUE_NUMBER" \
+                --add-label "$Layer" \
+                --add-label "$Priority" \
+                --milestone "$MILESTONE_NUMBER" || true
+              sleep 1
             fi
-
-            sleep 1
           done
