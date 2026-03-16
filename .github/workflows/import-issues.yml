@@ -43,6 +43,8 @@ jobs:
         run: |
           sed -i 's/\r$//' issues.csv   # fix Windows line endings
           csvjson issues.csv > issues.json
+          echo "Parsed issues:"
+          cat issues.json
 
       # -------------------------------
       # Create missing labels and milestones
@@ -53,16 +55,27 @@ jobs:
             Layer=$(echo "$ISSUE" | jq -r '.Layer')
             Priority=$(echo "$ISSUE" | jq -r '.Priority')
             Phase=$(echo "$ISSUE" | jq -r '.Phase')
+            Module=$(echo "$ISSUE" | jq -r '.Module')
 
-            # Create labels if not empty
-            for LABEL in "$Layer" "$Priority"; do
-              if [ -n "$LABEL" ] && [ "$LABEL" != "null" ]; then
-                gh label create "$LABEL" --color F29513 --force || true
-                sleep 1
-              fi
-            done
+            # Create Layer label
+            if [ -n "$Layer" ] && [ "$Layer" != "null" ]; then
+              gh label create "$Layer" --color "0075ca" --force || true
+              sleep 1
+            fi
 
-            # Create milestones if not empty and not exist
+            # Create Priority label
+            if [ -n "$Priority" ] && [ "$Priority" != "null" ]; then
+              gh label create "$Priority" --color "e4e669" --force || true
+              sleep 1
+            fi
+
+            # Create Module label
+            if [ -n "$Module" ] && [ "$Module" != "null" ]; then
+              gh label create "$Module" --color "d93f0b" --force || true
+              sleep 1
+            fi
+
+            # Create Phase milestone if not exists
             if [ -n "$Phase" ] && [ "$Phase" != "null" ]; then
               EXISTS=$(gh api repos/${{ github.repository }}/milestones --paginate \
                 --jq ".[] | select(.title==\"$Phase\") | .title")
@@ -96,7 +109,6 @@ jobs:
             Title=$(echo "$ISSUE" | jq -r '.Title')
             echo "Checking duplicates for: $Title"
 
-            # List all open issues with exact title, sorted oldest first
             ISSUES=$(gh api repos/${{ github.repository }}/issues \
               --jq "[.[] | select(.title==\"$Title\") | .number] | sort | .[]")
 
@@ -104,7 +116,6 @@ jobs:
 
             if [ "$COUNT" -gt 1 ]; then
               echo "Duplicate issues found for: $Title"
-              # Keep the first (oldest), delete the rest
               echo "$ISSUES" | tail -n +2 | while read DUP; do
                 echo "Deleting duplicate issue #$DUP"
                 gh issue delete "$DUP" --yes || true
@@ -118,7 +129,6 @@ jobs:
       # -------------------------------
       - name: Create or Update Issues
         run: |
-          # Load milestone map into associative array
           declare -A MILESTONE_MAP
           while IFS='=' read -r TITLE NUMBER; do
             MILESTONE_MAP["$TITLE"]=$NUMBER
@@ -132,7 +142,9 @@ jobs:
             Layer=$(echo "$ISSUE" | jq -r '.Layer')
             Priority=$(echo "$ISSUE" | jq -r '.Priority')
 
-            BODY="### Module: $Module\n\n$Description\n\n**Phase:** $Phase\n**Layer:** $Layer\n**Priority:** $Priority"
+            # Build issue body
+            BODY=$(printf "### Module: %s\n\n%s\n\n**Phase:** %s\n**Layer:** %s\n**Priority:** %s" \
+              "$Module" "$Description" "$Phase" "$Layer" "$Priority")
 
             MILESTONE_NUMBER=${MILESTONE_MAP["$Phase"]}
 
@@ -144,16 +156,19 @@ jobs:
               echo "Creating issue: $Title"
               gh issue create \
                 --title "$Title" \
-                --body "$(printf "$BODY")" \
+                --body "$BODY" \
                 --label "$Layer" \
                 --label "$Priority" \
+                --label "$Module" \
                 --milestone "$MILESTONE_NUMBER" || true
               sleep 1
             else
               echo "Updating issue #$ISSUE_NUMBER: $Title"
               gh issue edit "$ISSUE_NUMBER" \
+                --body "$BODY" \
                 --add-label "$Layer" \
                 --add-label "$Priority" \
+                --add-label "$Module" \
                 --milestone "$MILESTONE_NUMBER" || true
               sleep 1
             fi
