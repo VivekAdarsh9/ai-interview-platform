@@ -1,0 +1,30 @@
+name: Import Issues from CSV
+
+on:
+  workflow_dispatch:
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install GitHub CLI
+        run: |
+          sudo apt update
+          sudo apt install gh -y
+
+      - name: Authenticate
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | gh auth login --with-token
+
+      - name: Import issues
+        run: |
+          while IFS=, read -r title body labels milestone
+          do
+            gh issue create \
+              --title "$title" \
+              --body "$body" \
+              --label "$labels"
+          done < issues.csv
